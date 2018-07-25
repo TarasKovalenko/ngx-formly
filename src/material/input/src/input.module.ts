@@ -7,10 +7,9 @@ import { FormlyMatFormFieldModule } from '@ngx-formly/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 
 import { FormlyFieldInput } from './input.type';
-import { FormlyFieldTextArea } from './textarea.type';
 
 @NgModule({
-  declarations: [FormlyFieldInput, FormlyFieldTextArea],
+  declarations: [FormlyFieldInput],
   imports: [
     CommonModule,
     ReactiveFormsModule,
@@ -23,17 +22,6 @@ import { FormlyFieldTextArea } from './textarea.type';
           name: 'input',
           component: FormlyFieldInput,
           wrappers: ['form-field'],
-        },
-        {
-          name: 'textarea',
-          component: FormlyFieldTextArea,
-          wrappers: ['form-field'],
-          defaultOptions: {
-            templateOptions: {
-              cols: 1,
-              rows: 1,
-            },
-          },
         },
       ],
     }),

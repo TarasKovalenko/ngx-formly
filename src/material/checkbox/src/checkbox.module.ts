@@ -7,10 +7,9 @@ import { FormlyMatFormFieldModule } from '@ngx-formly/material/form-field';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 
 import { FormlyFieldCheckbox } from './checkbox.type';
-import { FormlyFieldMultiCheckbox } from './multicheckbox.type';
 
 @NgModule({
-  declarations: [FormlyFieldCheckbox, FormlyFieldMultiCheckbox],
+  declarations: [FormlyFieldCheckbox],
   imports: [
     CommonModule,
     ReactiveFormsModule,
@@ -31,18 +30,6 @@ import { FormlyFieldMultiCheckbox } from './multicheckbox.type';
               floatLabel: 'always',
               hideLabel: true,
               align: 'start', // start or end
-            },
-          },
-        },
-        {
-          name: 'multicheckbox',
-          component: FormlyFieldMultiCheckbox,
-          wrappers: ['form-field'],
-          defaultOptions: {
-            templateOptions: {
-              hideFieldUnderline: true,
-              floatLabel: 'always',
-              options: [],
             },
           },
         },

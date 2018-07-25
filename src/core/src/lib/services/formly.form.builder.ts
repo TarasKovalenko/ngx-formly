@@ -1,10 +1,9 @@
 import { Injectable } from '@angular/core';
 import { FormGroup, FormArray, FormControl, AbstractControl, Validators, AbstractControlOptions } from '@angular/forms';
 import { FormlyConfig, FieldValidatorFn, TemplateManipulators } from './formly.config';
-import { FORMLY_VALIDATORS, evalStringExpression, evalExpressionValueSetter, getFieldId, isObject, isNullOrUndefined, clone, assignModelToFields } from './../utils';
 import { FormlyFieldConfig, FormlyFormOptions } from '../components/formly.field.config';
-import { getKeyPath, isFunction } from '../utils';
 import { FormlyFormExpression } from './formly.form.expression';
+import { FORMLY_VALIDATORS, getFieldId, isObject, isNullOrUndefined, assignModelToFields, getKeyPath } from '../utils';
 
 @Injectable()
 export class FormlyFormBuilder {
@@ -16,12 +15,8 @@ export class FormlyFormBuilder {
   ) {}
 
   buildForm(form: FormGroup | FormArray, fields: FormlyFieldConfig[] = [], model: any, options: FormlyFormOptions) {
-    let fieldTransforms = (options && options.fieldTransform) || this.formlyConfig.extras.fieldTransform;
-    if (!Array.isArray(fieldTransforms)) {
-      fieldTransforms = [fieldTransforms];
-    }
-
-    fieldTransforms.forEach(fieldTransform => {
+    const fieldTransforms = (options && options.fieldTransform) || this.formlyConfig.extras.fieldTransform;
+    (Array.isArray(fieldTransforms) ? fieldTransforms : [fieldTransforms]).forEach(fieldTransform => {
       if (fieldTransform) {
         fields = fieldTransform(fields, model, form, options);
         if (!fields) {
@@ -30,52 +25,30 @@ export class FormlyFormBuilder {
       }
     });
 
+    this.initFieldsType(fields);
     assignModelToFields(fields, model);
     this._buildForm(form, fields, options);
-    this.formlyFormExpression.checkFields(form, fields, model, options);
+    this.formlyFormExpression.initFields(form, fields, model, options);
   }
 
   private _buildForm(form: FormGroup | FormArray, fields: FormlyFieldConfig[] = [], options: FormlyFormOptions) {
     this.formId++;
-    this.registerFormControls(form, fields, options);
-  }
-
-  private registerFormControls(form: FormGroup | FormArray, fields: FormlyFieldConfig[], options: FormlyFormOptions) {
     fields.forEach((field, index) => {
-      field.id = getFieldId(`formly_${this.formId}`, field, index);
-      this.initFieldOptions(field);
-      this.initFieldExpression(field, options);
+      this.initFieldOptions(field, index);
       this.initFieldValidation(field);
-      this.initFieldWrappers(field);
       this.initFieldAsyncValidation(field);
-
-      if (field.fieldGroup && !field.type) {
-        field.type = 'formly-group';
-      }
-
       if (field.key && field.type) {
         const paths = getKeyPath({ key: field.key });
-        let rootForm = form, rootModel = field.model;
+        let rootForm = form, rootModel = field.fieldGroup ? { [paths[0]]: field.model } : field.model;
         paths.forEach((path, index) => {
           // FormGroup/FormArray only allow string value for path
           const formPath = path.toString();
           // is last item
           if (index === paths.length - 1) {
-            this.addFormControl(
-              rootForm,
-              field,
-              field.fieldGroup ? { [formPath]: field.fieldArray ? [] : {} } : rootModel,
-              formPath,
-            );
-
-            if (field.fieldArray) {
-              field.fieldGroup = [];
-              field.model.forEach((m: any, i: number) => field.fieldGroup.push(
-                { ...clone(field.fieldArray), key: `${i}` },
-              ));
-              assignModelToFields(field.fieldGroup, rootModel);
+            this.addFormControl(rootForm, field, rootModel, formPath);
+            if (field.fieldGroup) {
+              this._buildForm(field.formControl as FormGroup, field.fieldGroup, options);
             }
-
           } else {
             let nestedForm = rootForm.get(formPath) as FormGroup;
             if (!nestedForm) {
@@ -90,102 +63,111 @@ export class FormlyFormBuilder {
             rootModel = rootModel[path];
           }
         });
-      }
-
-      if (field.fieldGroup) {
-        // if `hideExpression` is set in that case we have to deal
-        // with toggle FormControl for each field in fieldGroup separately
-        if (field.hideExpression) {
-          field.fieldGroup.forEach(f => {
-            let hideExpression: any = f.hideExpression || (() => false);
-            if (typeof hideExpression === 'string') {
-              hideExpression = evalStringExpression(hideExpression, ['model', 'formState']);
-            }
-
-            f.hideExpression = (model, formState) => field.hide || hideExpression(model, formState);
-          });
-        }
-
-        if (field.key) {
-          this._buildForm(field.formControl as FormGroup, field.fieldGroup, options);
-        } else {
-          this._buildForm(form, field.fieldGroup, options);
-        }
+      } else if (!field.key && field.fieldGroup) {
+        this._buildForm(form, field.fieldGroup, options);
       }
     });
   }
 
-  private initFieldExpression(field: FormlyFieldConfig, options: FormlyFormOptions) {
-    if (field.expressionProperties) {
-      for (const key in field.expressionProperties as any) {
-        if (typeof field.expressionProperties[key] === 'string' || isFunction(field.expressionProperties[key])) {
-          // cache built expression
-          field.expressionProperties[key] = {
-            expression: isFunction(field.expressionProperties[key]) ? field.expressionProperties[key] : evalStringExpression(field.expressionProperties[key], ['model', 'formState']),
-            expressionValueSetter: evalExpressionValueSetter(
-              `field.${key}`,
-              ['expressionValue', 'model', 'field'],
-            ),
-          };
-        }
+  private initFieldsType(fields: FormlyFieldConfig[]) {
+    fields.forEach((field, index) => {
+      if (field.type) {
+        this.formlyConfig.getMergedField(field);
       }
-    }
 
-    if (field.hideExpression) {
-      // delete hide value in order to force re-evaluate it in FormlyFormExpression.
-      delete field.hide;
-      if (typeof field.hideExpression === 'string') {
-        // cache built expression
-        field.hideExpression = evalStringExpression(field.hideExpression, ['model', 'formState']);
+      if (field.fieldGroup) {
+        this.initFieldsType(field.fieldGroup);
       }
-    }
+    });
   }
 
-  private initFieldOptions(field: FormlyFieldConfig) {
+  private initFieldOptions(field: FormlyFieldConfig, index: number) {
+    field.id = getFieldId(`formly_${this.formId}`, field, index);
     field.templateOptions = field.templateOptions || {};
-    if (field.type) {
-      this.formlyConfig.getMergedField(field);
-      if (field.key) {
-        field.templateOptions = Object.assign({
-          label: '',
-          placeholder: '',
-          focus: false,
-        }, field.templateOptions);
+    field.lifecycle = field.lifecycle || {};
+    if (field.type && field.key) {
+      field.templateOptions = Object.assign({
+        label: '',
+        placeholder: '',
+        focus: false,
+      }, field.templateOptions);
+    }
+
+    this.initFieldWrappers(field);
+    if (field.fieldGroup) {
+      if (!field.type) {
+        field.type = 'formly-group';
       }
     }
   }
 
-  private initFieldAsyncValidation(field: FormlyFieldConfig) {
-    const validators: any = [];
-    if (field.asyncValidators) {
-      for (const validatorName in field.asyncValidators) {
-        if (validatorName !== 'validation') {
-          let validator = field.asyncValidators[validatorName];
-          if (isObject(validator)) {
-            validator = validator.expression;
+  private addFormControl(form: FormGroup | FormArray, field: FormlyFieldConfig, model: any, path: string) {
+    let control: AbstractControl;
+    const validators = field.validators ? field.validators.validation : undefined,
+      asyncValidators = field.asyncValidators ? field.asyncValidators.validation : undefined,
+      updateOn = field.modelOptions && field.modelOptions.updateOn ?
+        field.modelOptions.updateOn : undefined;
+    const abstractControlOptions = {
+      validators,
+      asyncValidators,
+      updateOn,
+    } as AbstractControlOptions;
+
+    if (field.formControl instanceof AbstractControl || form.get(path)) {
+      control = field.formControl || form.get(path);
+      if (
+        !(isNullOrUndefined(control.value) && isNullOrUndefined(model[path]))
+        && control.value !== model[path]
+        && control instanceof FormControl
+      ) {
+        control.patchValue(model[path]);
+      }
+    } else if (field.component && field.component.createControl) {
+      control = field.component.createControl(model[path], field);
+    } else if (field.fieldGroup && !field.fieldArray) {
+      control = new FormGroup({}, abstractControlOptions);
+    } else if (field.fieldArray) {
+      control = new FormArray([], abstractControlOptions);
+    } else {
+      control = new FormControl(model[path], abstractControlOptions);
+    }
+
+    if (field.templateOptions.disabled) {
+      control.disable();
+    }
+
+    // Replace decorated property with a getter that returns the observable.
+    // https://github.com/angular-redux/store/blob/master/src/decorators/select.ts#L79-L85
+    if (delete field.templateOptions.disabled) {
+      Object.defineProperty(field.templateOptions, 'disabled', {
+        get: (function () { return !this.formControl.enabled; }).bind(field),
+        set: (function (value: boolean) {
+          if (this._expressionProperties && this._expressionProperties.hasOwnProperty('templateOptions.disabled')) {
+            this._expressionProperties['templateOptions.disabled'].expressionValue = value;
           }
 
-          validators.push((control: FormControl) => new Promise((resolve) => {
-            return validator(control, field).then((result: boolean) => {
-              resolve(result ? null : { [validatorName]: true });
-            });
-          }));
-        }
+          value ? this.formControl.disable() : this.formControl.enable();
+        }).bind(field),
+        enumerable: true,
+        configurable: true,
+      });
+    }
+
+    this.addControl(form, path, control, field);
+  }
+
+  private addControl(form: FormGroup | FormArray, key: string | number, formControl: AbstractControl, field?: FormlyFieldConfig) {
+    if (field) {
+      field.formControl = formControl;
+    }
+
+    if (form instanceof FormArray) {
+      if (form.at(<number> key) !== formControl) {
+        form.setControl(<number>key, formControl);
       }
-    }
-
-    if (field.asyncValidators && Array.isArray(field.asyncValidators.validation)) {
-      field.asyncValidators.validation
-        .forEach((validator: any) => validators.push(this.wrapNgValidatorFn(field, validator)));
-    }
-
-    if (validators.length) {
-      if (field.asyncValidators && !Array.isArray(field.asyncValidators.validation)) {
-        field.asyncValidators.validation = Validators.composeAsync([field.asyncValidators.validation, ...validators]);
-      } else {
-        field.asyncValidators = {
-          validation: Validators.composeAsync(validators),
-        };
+    } else {
+      if (form.get(<string> key) !== formControl) {
+        form.setControl(<string>key, formControl);
       }
     }
   }
@@ -255,73 +237,37 @@ export class FormlyFormBuilder {
     }
   }
 
-  private addFormControl(form: FormGroup | FormArray, field: FormlyFieldConfig, model: any, path: string) {
-    let control: AbstractControl;
-    const validators = field.validators ? field.validators.validation : undefined,
-      asyncValidators = field.asyncValidators ? field.asyncValidators.validation : undefined,
-      updateOn = field.modelOptions && field.modelOptions.updateOn ?
-        field.modelOptions.updateOn : undefined;
-    const abstractControlOptions = {
-      validators,
-      asyncValidators,
-      updateOn,
-    } as AbstractControlOptions;
-
-    if (field.formControl instanceof AbstractControl || form.get(path)) {
-      control = field.formControl || form.get(path);
-      if (
-        !(isNullOrUndefined(control.value) && isNullOrUndefined(model[path]))
-        && control.value !== model[path]
-        && control instanceof FormControl
-      ) {
-        control.patchValue(model[path]);
-      }
-    } else if (field.component && field.component.createControl) {
-      control = field.component.createControl(model[path], field);
-    } else if (field.fieldGroup && field.key && field.key === path && !field.fieldArray) {
-      control = new FormGroup({}, abstractControlOptions);
-    } else if (field.fieldArray && field.key && field.key === path) {
-      control = new FormArray([], abstractControlOptions);
-    } else {
-      control = new FormControl(model[path], abstractControlOptions);
-    }
-
-    if (field.templateOptions.disabled) {
-      control.disable();
-    }
-
-    // Replace decorated property with a getter that returns the observable.
-    // https://github.com/angular-redux/store/blob/master/src/decorators/select.ts#L79-L85
-    if (delete field.templateOptions.disabled) {
-      Object.defineProperty(field.templateOptions, 'disabled', {
-        get: (function () { return !this.formControl.enabled; }).bind(field),
-        set: (function (value: boolean) {
-          if (this.expressionProperties && this.expressionProperties.hasOwnProperty('templateOptions.disabled')) {
-            this.expressionProperties['templateOptions.disabled'].expressionValue = value;
+  private initFieldAsyncValidation(field: FormlyFieldConfig) {
+    const validators: any = [];
+    if (field.asyncValidators) {
+      for (const validatorName in field.asyncValidators) {
+        if (validatorName !== 'validation') {
+          let validator = field.asyncValidators[validatorName];
+          if (isObject(validator)) {
+            validator = validator.expression;
           }
 
-          value ? this.formControl.disable() : this.formControl.enable();
-        }).bind(field),
-        enumerable: true,
-        configurable: true,
-      });
-    }
-
-    this.addControl(form, path, control, field);
-  }
-
-  private addControl(form: FormGroup | FormArray, key: string | number, formControl: AbstractControl, field?: FormlyFieldConfig) {
-    if (field) {
-      field.formControl = formControl;
-    }
-
-    if (form instanceof FormArray) {
-      if (form.at(<number> key) !== formControl) {
-        form.setControl(<number>key, formControl);
+          validators.push((control: FormControl) => new Promise((resolve) => {
+            return validator(control, field).then((result: boolean) => {
+              resolve(result ? null : { [validatorName]: true });
+            });
+          }));
+        }
       }
-    } else {
-      if (form.get(<string> key) !== formControl) {
-        form.setControl(<string>key, formControl);
+    }
+
+    if (field.asyncValidators && Array.isArray(field.asyncValidators.validation)) {
+      field.asyncValidators.validation
+        .forEach((validator: any) => validators.push(this.wrapNgValidatorFn(field, validator)));
+    }
+
+    if (validators.length) {
+      if (field.asyncValidators && !Array.isArray(field.asyncValidators.validation)) {
+        field.asyncValidators.validation = Validators.composeAsync([field.asyncValidators.validation, ...validators]);
+      } else {
+        field.asyncValidators = {
+          validation: Validators.composeAsync(validators),
+        };
       }
     }
   }

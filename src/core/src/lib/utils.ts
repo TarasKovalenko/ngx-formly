@@ -70,19 +70,36 @@ export function getFieldModel(model: any, field: FormlyFieldConfig, constructEmp
   return value;
 }
 
-export function assignModelToFields(fields: FormlyFieldConfig[], model: any) {
-  fields.forEach((field, index) => {
+export function assignModelToFields(fields: FormlyFieldConfig[], model: any, parent?: FormlyFieldConfig) {
+  fields.forEach((field) => {
     if (!isUndefined(field.defaultValue) && isUndefined(getValueForKey(model, field.key))) {
       assignModelValue(model, field.key, field.defaultValue);
     }
 
-    (field as any).model = model;
-    if (field.key && (field.fieldGroup || field.fieldArray)) {
-      (field as any).model = getFieldModel(model, field, true);
+    Object.defineProperty(field, 'parent', { get: () => parent, configurable: true });
+    if (field.key && field.fieldArray) {
+      field.fieldGroup = field.fieldGroup || [];
+      field.fieldGroup.length = 0;
+
+      const m = getFieldModel(model, field, true);
+      m.forEach((m: any, i: number) => field.fieldGroup.push({ ...clone(field.fieldArray), key: `${i}` }));
+      if (field.hasOwnProperty('model') && field.model !== m) {
+        field.model.length = 0;
+        m.forEach((m: any, i: number) => field.model[i] = m);
+      }
     }
 
-    if (field.fieldGroup) {
-      assignModelToFields(field.fieldGroup, field.model);
+    if (!field.hasOwnProperty('model') || !field.key || !(field.fieldArray || field.fieldGroup)) {
+      Object.defineProperty(field, 'model', {
+        get: () => field.key && (field.fieldGroup || field.fieldArray)
+          ? getFieldModel(model, field, true)
+          : model,
+        configurable: true,
+      });
+
+      if (field.fieldGroup) {
+        assignModelToFields(field.fieldGroup, field.model, field);
+      }
     }
   });
 }
@@ -156,8 +173,9 @@ export function isFunction(value: any) {
 }
 
 export function objAndSameType(obj1: any, obj2: any) {
-  return isObject(obj1) && isObject(obj2) &&
-    Object.getPrototypeOf(obj1) === Object.getPrototypeOf(obj2);
+  return isObject(obj1) && isObject(obj2)
+    && Object.getPrototypeOf(obj1) === Object.getPrototypeOf(obj2)
+    && !(Array.isArray(obj1) || Array.isArray(obj2));
 }
 
 export function isObject(x: any) {
@@ -193,7 +211,7 @@ export function evalStringExpression(expression: string, argNames: string[]) {
 
 export function evalExpressionValueSetter(expression: string, argNames: string[]) {
   try {
-    return Function(...argNames, `${expression} = expressionValue;`);
+    return Function(...argNames, `${expression} = expressionValue;`) as (value: any) => void;
   } catch (error) {
     console.error(error);
   }

@@ -2,6 +2,42 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+<a name="4.6.6"></a>
+## [4.6.6](https://github.com/formly-js/ngx-formly/compare/v4.6.5...v4.6.6) (2018-07-20)
+
+* **core:** Revert "perf(core): check expression change only when expression is set"
+
+<a name="4.6.5"></a>
+## [4.6.5](https://github.com/formly-js/ngx-formly/compare/v4.6.4...v4.6.5) (2018-07-18)
+
+
+### Bug Fixes
+
+* **core:** avoid merging array in reverseDeepMerge ([1ab4e11](https://github.com/formly-js/ngx-formly/commit/1ab4e11))
+* **core:** init fields options before assignModelToFields ([9a322e6](https://github.com/formly-js/ngx-formly/commit/9a322e6))
+
+
+
+<a name="4.6.4"></a>
+## [4.6.4](https://github.com/formly-js/ngx-formly/compare/v4.6.3...v4.6.4) (2018-07-12)
+
+
+### Performance Improvements
+
+* **core:** check expression change only when expression is set ([f30ac9a](https://github.com/formly-js/ngx-formly/commit/f30ac9a))
+
+
+
+<a name="4.6.3"></a>
+## [4.6.3](https://github.com/formly-js/ngx-formly/compare/v4.6.2...v4.6.3) (2018-06-28)
+
+
+### Bug Fixes
+
+* **material:** ensure focus field elm on container click ([b5f195b](https://github.com/formly-js/ngx-formly/commit/b5f195b))
+
+
+
 <a name="4.6.2"></a>
 ## [4.6.2](https://github.com/formly-js/ngx-formly/compare/v4.6.1...v4.6.2) (2018-06-27)
 

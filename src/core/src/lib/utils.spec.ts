@@ -5,13 +5,14 @@ import { of } from 'rxjs';
 describe('FormlyUtils service', () => {
   describe('reverseDeepMerge', () => {
     it('should properly reverse deep merge', () => {
-      let foo = {foo: 'bar', obj: {}};
-      let bar = {foo: 'foo', foobar: 'foobar', fun: () => console.log('demo'), obj: {}, date: new Date()};
+      let foo = {foo: 'bar', obj: {}, arr: [] };
+      let bar = { foo: 'foo', foobar: 'foobar', fun: () => console.log('demo'), obj: {}, date: new Date(), arr: ['bar']};
       reverseDeepMerge(foo, bar);
 
       expect(foo['foo']).toEqual('bar');
       expect(foo['foobar']).toEqual('foobar');
       expect(foo['date'] instanceof Date).toBeTruthy();
+      expect(foo.arr).toEqual([]);
     });
   });
 
@@ -307,6 +308,22 @@ describe('assignModelToFields', () => {
 
       expect(fields[0].model).toEqual(model.location.address);
       expect(fields[0].fieldGroup[0].model).toEqual(model.location.address);
+    });
+
+    it('assign parent field to children', () => {
+      model = { address: { city: 'foo' } };
+      fields = [{
+        key: 'address',
+        fieldGroup: [{
+          key: 'city',
+        }],
+      }];
+
+      assignModelToFields(fields, model);
+
+      expect(fields[0].model).toEqual(model.address);
+      expect(fields[0].fieldGroup[0].model).toEqual(model.address);
+      expect(fields[0].fieldGroup[0].parent).toEqual(fields[0]);
     });
   });
 });
