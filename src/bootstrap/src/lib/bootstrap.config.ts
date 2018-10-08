@@ -1,7 +1,4 @@
 import { ConfigOption } from '@ngx-formly/core';
-import { FormlyWrapperAddons } from './wrappers/addons';
-import { TemplateDescription } from './run/description';
-import { TemplateValidation } from './run/validation';
 import { TemplateAddons } from './run/addon';
 import {
   FormlyFieldInput,
@@ -12,10 +9,8 @@ import {
   FormlyFieldMultiCheckbox,
 } from './types/types';
 import {
-  FormlyWrapperLabel,
-  FormlyWrapperDescription,
-  FormlyWrapperValidationMessages,
-  FormlyWrapperFieldset,
+  FormlyWrapperAddons,
+  FormlyWrapperFormField,
 } from './wrappers/wrappers';
 
 export const FIELD_TYPE_COMPONENTS = [
@@ -28,11 +23,8 @@ export const FIELD_TYPE_COMPONENTS = [
   FormlyFieldMultiCheckbox,
 
   // wrappers
-  FormlyWrapperLabel,
-  FormlyWrapperDescription,
-  FormlyWrapperValidationMessages,
-  FormlyWrapperFieldset,
   FormlyWrapperAddons,
+  FormlyWrapperFormField,
 ];
 
 export const BOOTSTRAP_FORMLY_CONFIG: ConfigOption = {
@@ -40,22 +32,23 @@ export const BOOTSTRAP_FORMLY_CONFIG: ConfigOption = {
     {
       name: 'input',
       component: FormlyFieldInput,
-      wrappers: ['fieldset', 'label'],
+      wrappers: ['form-field'],
     },
     {
       name: 'checkbox',
       component: FormlyFieldCheckbox,
-      wrappers: ['fieldset'],
+      wrappers: ['form-field'],
       defaultOptions: {
         templateOptions: {
           indeterminate: true,
+          hideLabel: true,
         },
       },
     },
     {
       name: 'radio',
       component: FormlyFieldRadio,
-      wrappers: ['fieldset', 'label'],
+      wrappers: ['form-field'],
       defaultOptions: {
         templateOptions: {
           options: [],
@@ -65,7 +58,7 @@ export const BOOTSTRAP_FORMLY_CONFIG: ConfigOption = {
     {
       name: 'select',
       component: FormlyFieldSelect,
-      wrappers: ['fieldset', 'label'],
+      wrappers: ['form-field'],
       defaultOptions: {
         templateOptions: {
           options: [],
@@ -75,7 +68,7 @@ export const BOOTSTRAP_FORMLY_CONFIG: ConfigOption = {
     {
       name: 'textarea',
       component: FormlyFieldTextArea,
-      wrappers: ['fieldset', 'label'],
+      wrappers: ['form-field'],
       defaultOptions: {
         templateOptions: {
           cols: 1,
@@ -86,7 +79,7 @@ export const BOOTSTRAP_FORMLY_CONFIG: ConfigOption = {
     {
       name: 'multicheckbox',
       component: FormlyFieldMultiCheckbox,
-      wrappers: ['fieldset', 'label'],
+      wrappers: ['form-field'],
       defaultOptions: {
         templateOptions: {
           options: [],
@@ -95,15 +88,10 @@ export const BOOTSTRAP_FORMLY_CONFIG: ConfigOption = {
     },
   ],
   wrappers: [
-    {name: 'label', component: FormlyWrapperLabel},
-    {name: 'description', component: FormlyWrapperDescription},
-    {name: 'validation-message', component: FormlyWrapperValidationMessages},
-    {name: 'fieldset', component: FormlyWrapperFieldset},
     {name: 'addons', component: FormlyWrapperAddons},
+    {name: 'form-field', component: FormlyWrapperFormField},
   ],
   manipulators: [
-    {class: TemplateDescription, method: 'run'},
-    {class: TemplateValidation, method: 'run'},
     {class: TemplateAddons, method: 'run'},
   ],
 };

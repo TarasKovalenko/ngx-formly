@@ -21,11 +21,11 @@ import { Subject } from 'rxjs';
       </mat-label>
 
       <ng-container matPrefix>
-        <ng-container *ngTemplateOutlet="to.prefix"></ng-container>
+        <ng-container *ngTemplateOutlet="to.prefix ? to.prefix : field['_matPrefix']"></ng-container>
       </ng-container>
 
       <ng-container matSuffix>
-        <ng-container *ngTemplateOutlet="to.suffix"></ng-container>
+        <ng-container *ngTemplateOutlet="to.suffix ? to.suffix : field['_matSuffix']"></ng-container>
       </ng-container>
 
       <!-- fix https://github.com/angular/material2/issues/7737 by setting id to null  -->
@@ -52,7 +52,11 @@ export class FormlyWrapperFormField extends FieldWrapper implements OnInit, OnDe
 
   ngOnInit() {
     this.formField._control = this;
-    (<any> this.field)['__formField__'] = this.formField;
+    Object.defineProperty(this.field, '__formField__', {
+      get: () => this.formField,
+      enumerable: false,
+      configurable: true,
+    });
 
     // fix for https://github.com/angular/material2/issues/11437
     if (this.field.hide && this.field.templateOptions.appearance === 'outline') {
@@ -65,7 +69,7 @@ export class FormlyWrapperFormField extends FieldWrapper implements OnInit, OnDe
       return;
     }
 
-    this.formField._initialGapCalculated = false;
+    this.formField.updateOutlineGap();
     this.initialGapCalculated = true;
   }
 

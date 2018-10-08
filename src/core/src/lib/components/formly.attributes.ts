@@ -1,20 +1,41 @@
-import { Directive, HostListener, ElementRef, Input, OnChanges, SimpleChanges, SimpleChange, Renderer2 } from '@angular/core';
-import { FormlyFieldConfig } from './formly.field.config';
+import { Directive, HostListener, ElementRef, Input, OnChanges, SimpleChanges, Renderer2 } from '@angular/core';
+import { FormlyFieldConfig, FormlyTemplateOptions } from './formly.field.config';
 
 @Directive({
   selector: '[formlyAttributes]',
+  host: {
+    '[attr.name]': 'field.name',
+    '[attr.placeholder]': 'to.placeholder',
+    '[attr.tabindex]': 'to.tabindex',
+    '[attr.readonly]': 'to.readonly',
+    '[attr.step]': 'to.step',
+
+    '(keyup)': 'to.keyup && to.keyup(field, $event)',
+    '(keydown)': 'to.keydown && to.keydown(field, $event)',
+    '(click)': 'to.click && to.click(field, $event)',
+    '(change)': 'to.change && to.change(field, $event)',
+    '(keypress)': 'to.keypress && to.keypress(field, $event)',
+  },
 })
 export class FormlyAttributes implements OnChanges {
   @Input('formlyAttributes') field: FormlyFieldConfig;
-  private attributes = ['id', 'name', 'placeholder', 'tabindex', 'step', 'readonly'];
-  private statements = ['change', 'keydown', 'keyup', 'keypress', 'click', 'focus', 'blur'];
 
-  @HostListener('focus') onFocus() {
+  @HostListener('focus', ['$event']) onFocus($event) {
     this.field.focus = true;
+    if (this.to.focus) {
+      this.to.focus(this.field, $event);
+    }
   }
 
-  @HostListener('blur') onBlur() {
+  @HostListener('blur', ['$event']) onBlur($event) {
     this.field.focus = false;
+    if (this.to.blur) {
+      this.to.blur(this.field, $event);
+    }
+  }
+
+  get to(): FormlyTemplateOptions {
+    return this.field.templateOptions || {};
   }
 
   constructor(
@@ -25,24 +46,17 @@ export class FormlyAttributes implements OnChanges {
   ngOnChanges(changes: SimpleChanges) {
     if (changes.field) {
       const fieldChanges = changes.field;
-      this.attributes
-        .filter(attr => this.canApplyRender(fieldChanges, attr))
-        .forEach(attr => this.renderer.setAttribute(
-          this.elementRef.nativeElement, attr, this.getPropValue(this.field, attr),
-        ));
 
-      if (this.field.templateOptions && this.field.templateOptions.attributes) {
-        const attributes = this.field.templateOptions.attributes;
-        Object.keys(attributes).forEach(name => this.renderer.setAttribute(
-          this.elementRef.nativeElement, name, attributes[name] as string,
-        ));
+      this.renderer.setAttribute(this.elementRef.nativeElement, 'id', this.field.id);
+      if (this.to && this.to.attributes) {
+        this.setAttributes(this.to.attributes);
+        Object.defineProperty(this.to, 'attributes', {
+          get: () => this.to.__attributes__,
+          set: attributes => this.setAttributes(attributes),
+          enumerable: true,
+          configurable: true,
+        });
       }
-
-      this.statements
-        .filter(statement => this.canApplyRender(fieldChanges, statement))
-        .forEach(statement => this.renderer.listen(
-          this.elementRef.nativeElement, statement, this.getStatementValue(statement),
-        ));
 
       if ((fieldChanges.previousValue || {}).focus !== (fieldChanges.currentValue || {}).focus && this.elementRef.nativeElement.focus) {
         this.elementRef.nativeElement[this.field.focus ? 'focus' : 'blur']();
@@ -50,33 +64,14 @@ export class FormlyAttributes implements OnChanges {
     }
   }
 
-  private getPropValue(field: FormlyFieldConfig, prop: string) {
-    field = field || {};
-    if (field.templateOptions && field.templateOptions[prop]) {
-      return field.templateOptions[prop];
+  private setAttributes(attributes) {
+    if (this.to.__attributes__ && this.to.__attributes__ !== attributes) {
+      Object.keys(this.to.__attributes__).forEach(name => this.renderer.removeAttribute(this.elementRef.nativeElement, name));
     }
 
-    return (<any>field)[prop] || '';
-  }
-
-  private getStatementValue(statement: string) {
-    const fn = this.field.templateOptions[statement];
-
-    return (event: any) => fn(this.field, event);
-  }
-
-  private canApplyRender(fieldChange: SimpleChange, prop: string): Boolean {
-    const currentValue = this.getPropValue(this.field, prop),
-      previousValue = this.getPropValue(fieldChange.previousValue, prop);
-
-    if (previousValue !== currentValue) {
-      if (this.statements.indexOf(prop) !== -1) {
-        return typeof currentValue === 'function';
-      }
-
-      return true;
-    }
-
-    return false;
+    this.to.__attributes__ = attributes;
+    Object.keys(attributes).forEach(name => this.renderer.setAttribute(
+      this.elementRef.nativeElement, name, attributes[name] as string,
+    ));
   }
 }

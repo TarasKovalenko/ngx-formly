@@ -1,22 +1,16 @@
 import { Component, DoCheck, OnChanges, Input, SimpleChanges, Optional, EventEmitter, Output, SkipSelf, OnDestroy } from '@angular/core';
-import { FormGroup, FormArray, NgForm, FormGroupDirective, FormControl, AbstractControl } from '@angular/forms';
-import { FormlyFieldConfig, FormlyFormOptions, FormlyValueChangeEvent } from './formly.field.config';
+import { FormGroup, FormArray, NgForm, FormGroupDirective } from '@angular/forms';
+import { FormlyFieldConfig, FormlyFormOptions, FormlyValueChangeEvent, FormlyFormOptionsCache } from './formly.field.config';
 import { FormlyFormBuilder } from '../services/formly.form.builder';
-import { FormlyFormExpression } from '../services/formly.form.expression';
 import { FormlyConfig } from '../services/formly.config';
-import { assignModelValue, isNullOrUndefined, reverseDeepMerge, getFieldModel, assignModelToFields } from '../utils';
+import { assignModelValue, isNullOrUndefined, reverseDeepMerge } from '../utils';
 import { Subject, Subscription } from 'rxjs';
 import { debounceTime, map, tap } from 'rxjs/operators';
 
 @Component({
   selector: 'formly-form',
   template: `
-    <formly-field *ngFor="let field of fields"
-      [model]="field.model" [form]="form"
-      [field]="field"
-      [ngClass]="field.className"
-      [options]="options">
-    </formly-field>
+    <formly-field *ngFor="let field of fields" [field]="field"></formly-field>
     <ng-content></ng-content>
   `,
 })
@@ -33,9 +27,18 @@ export class FormlyForm implements DoCheck, OnChanges, OnDestroy {
   private initialModel: any;
   private modelChangeSubs: Subscription[] = [];
 
+  private enableCheckExprDebounce = false;
+  private checkExpressionChange$ = this.modelChange.pipe(
+    debounceTime(this.enableCheckExprDebounce ? 100 : 0),
+    tap(() => {
+      this.enableCheckExprDebounce = true;
+      this.checkExpressionChange();
+      this.enableCheckExprDebounce = false;
+    }),
+  ).subscribe();
+
   constructor(
     private formlyBuilder: FormlyFormBuilder,
-    private formlyExpression: FormlyFormExpression,
     private formlyConfig: FormlyConfig,
     @Optional() private parentForm: NgForm,
     @Optional() private parentFormGroup: FormGroupDirective,
@@ -51,27 +54,25 @@ export class FormlyForm implements DoCheck, OnChanges, OnDestroy {
       return;
     }
 
-    if (changes.fields || changes.form) {
+    if (changes.fields || changes.form || changes.model) {
       this.model = this.model || {};
       this.form = this.form || (new FormGroup({}));
       this.setOptions();
       this.clearModelSubscriptions();
       this.formlyBuilder.buildForm(this.form, this.fields, this.model, this.options);
       this.trackModelChanges(this.fields);
-      this.updateInitialValue();
-    } else if (changes.model) {
-      this.patchModel(this.model);
+      this.options.updateInitialValue();
     }
   }
 
   ngOnDestroy() {
     this.clearModelSubscriptions();
+    this.checkExpressionChange$.unsubscribe();
   }
 
   changeModel(event: { key: string, value: any }) {
     assignModelValue(this.model, event.key, event.value);
     this.modelChange.emit(this.model);
-    this.checkExpressionChange();
   }
 
   setOptions() {
@@ -86,7 +87,25 @@ export class FormlyForm implements DoCheck, OnChanges, OnDestroy {
     }
 
     if (!this.options.resetModel) {
-      this.options.resetModel = this.resetModel.bind(this);
+      this.options.resetModel = (model ?: any) => {
+        model = isNullOrUndefined(model) ? this.initialModel : model;
+        if (this.model) {
+          Object.keys(this.model).forEach(k => delete this.model[k]);
+          Object.assign(this.model, model || {});
+        }
+
+        this.clearModelSubscriptions();
+        this.formlyBuilder.buildForm(this.form, this.fields, this.model, this.options);
+        this.trackModelChanges(this.fields);
+
+        // we should call `NgForm::resetForm` to ensure changing `submitted` state after resetting form
+        // but only when the current component is a root one.
+        if (!this.parentFormlyForm && this.options.parentForm && this.options.parentForm.control === this.form) {
+          this.options.parentForm.resetForm(model);
+        } else {
+          this.form.reset(model);
+        }
+      };
     }
 
     if (!this.options.parentForm) {
@@ -94,28 +113,29 @@ export class FormlyForm implements DoCheck, OnChanges, OnDestroy {
     }
 
     if (!this.options.updateInitialValue) {
-      this.options.updateInitialValue = this.updateInitialValue.bind(this);
+      this.options.updateInitialValue = () => this.initialModel = reverseDeepMerge({}, this.model);
     }
 
-    if (!(<any> this.options).resetTrackModelChanges) {
-      (<any> this.options).resetTrackModelChanges = () => {
+    if (!(<FormlyFormOptionsCache> this.options)._buildForm) {
+      (<FormlyFormOptionsCache> this.options)._buildForm = () => {
         this.clearModelSubscriptions();
+        this.formlyBuilder.buildForm(this.form, this.fields, this.model, this.options);
         this.trackModelChanges(this.fields);
       };
     }
   }
 
   private checkExpressionChange() {
-    if (this.isRoot) {
-      this.formlyExpression.checkFields(this.form, this.fields, this.model, this.options);
+    if (this.isRoot && (<FormlyFormOptionsCache> this.options)._checkField) {
+      (<FormlyFormOptionsCache> this.options)._checkField({ fieldGroup: this.fields, model: this.model, formControl: this.form, options: this.options });
     }
   }
 
   private trackModelChanges(fields: FormlyFieldConfig[], rootKey: string[] = []) {
     fields.forEach(field => {
-      if (field.key && field.type && !field.fieldGroup && !field.fieldArray) {
+      if (field.key && field.type && !field.fieldGroup) {
         const valueChanges = field.formControl.valueChanges.pipe(
-          field.modelOptions && field.modelOptions.debounce && field.modelOptions.debounce.default
+          field.modelOptions.debounce && field.modelOptions.debounce.default
           ? debounceTime(field.modelOptions.debounce.default)
           : tap(() => {}),
           map(value => {
@@ -140,60 +160,5 @@ export class FormlyForm implements DoCheck, OnChanges, OnDestroy {
   private clearModelSubscriptions() {
     this.modelChangeSubs.forEach(sub => sub.unsubscribe());
     this.modelChangeSubs = [];
-  }
-
-  private patchModel(model: any) {
-    assignModelToFields(this.fields, model);
-    this.clearModelSubscriptions();
-    this.resetFieldArray(this.fields);
-    this.initializeFormValue(this.form);
-    (<FormGroup> this.form).patchValue(model, { onlySelf: true });
-    this.trackModelChanges(this.fields);
-  }
-
-  private resetModel(model?: any) {
-    model = isNullOrUndefined(model) ? this.initialModel : model;
-    assignModelToFields(this.fields, model);
-    this.resetFieldArray(this.fields);
-
-    // we should call `NgForm::resetForm` to ensure changing `submitted` state after resetting form
-    // but only when the current component is a root one.
-    if (!this.parentFormlyForm && this.options.parentForm && this.options.parentForm.control === this.form) {
-      this.options.parentForm.resetForm(model);
-    } else {
-      this.form.reset(model);
-    }
-
-    (<any> this.options).resetTrackModelChanges();
-  }
-
-  private resetFieldArray(fields: FormlyFieldConfig[]) {
-    fields.forEach(field => {
-      if (field.fieldArray) {
-        const formControl = <FormArray> field.formControl;
-        while (formControl.length !== 0) {
-          formControl.removeAt(0);
-        }
-        this.formlyBuilder.buildForm(field.formControl as FormArray, field.fieldGroup, field.model, this.options);
-      } else if (field.fieldGroup) {
-        this.resetFieldArray(field.fieldGroup);
-      } else if (field.key && field.type) {
-        field.formControl.reset(getFieldModel(field.model, field, false));
-      }
-    });
-  }
-
-  private initializeFormValue(control: AbstractControl) {
-    if (control instanceof FormControl) {
-      control.setValue(null);
-    } else if (control instanceof FormGroup) {
-      Object.keys(control.controls).forEach(k => this.initializeFormValue(control.controls[k]));
-    } else if (control instanceof FormArray) {
-      control.controls.forEach(c => this.initializeFormValue(c));
-    }
-  }
-
-  private updateInitialValue() {
-    this.initialModel = reverseDeepMerge({}, this.model);
   }
 }

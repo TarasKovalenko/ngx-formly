@@ -1,27 +1,58 @@
 import { FormlyFormBuilder, FormlyConfig, FormlyFieldConfig } from '../core';
 import { FormGroup, Validators, FormControl, FormArray } from '@angular/forms';
 import { Component } from '@angular/core';
-import { FormlyFormExpression } from './formly.form.expression';
 import { MockComponent } from '../test-utils';
 import { FormlyFieldConfigCache } from '../components/formly.field.config';
+import { FieldExpressionExtension } from '../extensions';
+import { FieldValidationExtension } from '../extensions/field-validation/field-validation';
+import { FieldFormExtension } from '../extensions/field-form/field-form';
+import { CoreExtension } from '../extensions/core/core';
 
 describe('FormlyFormBuilder service', () => {
   let builder: FormlyFormBuilder;
   let form: FormGroup;
-  let field: FormlyFieldConfig;
+  let field: FormlyFieldConfigCache;
   let TestComponent: Component;
+  let config: FormlyConfig;
 
   beforeEach(() => {
     TestComponent = MockComponent({ selector: 'formly-test-cmp' });
     form = new FormGroup({});
-    builder = new FormlyFormBuilder(
-      new FormlyConfig([{
-        types: [{ name: 'input', component: TestComponent }],
-        wrappers: [{ name: 'label', component: TestComponent, types: ['input'] }],
-        validators: [{ name: 'required', validation: Validators.required }],
-      }]),
-      new FormlyFormExpression(),
-    );
+    config = new FormlyConfig();
+    config.addConfig({
+      types: [
+        { name: 'input', component: TestComponent },
+        { name: 'input-createcontrol', component: TestComponentThatCreatesControl },
+      ],
+      wrappers: [{ name: 'label', component: TestComponent, types: ['input'] }],
+      validators: [{ name: 'required', validation: Validators.required }],
+      extensions: [
+        { name: 'core', extension: new CoreExtension(config) },
+        { name: 'field-validation', extension: new FieldValidationExtension(config) },
+        { name: 'field-form', extension: new FieldFormExtension() },
+        { name: 'field-expression', extension: new FieldExpressionExtension() },
+      ],
+    });
+
+    builder = new FormlyFormBuilder(config);
+  });
+
+  it('custom extension', () => {
+    const customExtension: any = {
+      prePopulate: () => { },
+      onPopulate: () => { },
+      postPopulate: () => { },
+    };
+    config.extensions.custom = customExtension;
+
+    spyOn(customExtension, 'prePopulate');
+    spyOn(customExtension, 'onPopulate');
+    spyOn(customExtension, 'postPopulate');
+
+    builder.buildForm(form, [], {}, {});
+    expect(customExtension.prePopulate).toHaveBeenCalledBefore(customExtension.onPopulate);
+    expect(customExtension.onPopulate).toHaveBeenCalledBefore(customExtension.postPopulate);
+    expect(customExtension.postPopulate).toHaveBeenCalled();
   });
 
   it('should have the model accessible from the field itself', () => {
@@ -61,6 +92,16 @@ describe('FormlyFormBuilder service', () => {
 
       builder.buildForm(form, fields, {}, {});
       expect(fields[0].formControl).toEqual(fields[1].formControl);
+    });
+
+    it('should update the formcontrol validation for a built form', () => {
+      form.addControl('test', new FormControl());
+      const fields: FormlyFieldConfig[] = [
+        { key: 'test', type: 'input', templateOptions: { required: true } },
+      ];
+
+      builder.buildForm(form, fields, {}, {});
+      expect(form.valid).toBeFalsy();
     });
 
     it('should update the formcontrol value for fields that already has formcontrol', () => {
@@ -140,6 +181,83 @@ describe('FormlyFormBuilder service', () => {
       builder.buildForm(form, [field], {}, {});
       expect(field.type).toEqual('formly-group');
       expect(field.fieldGroup[0].templateOptions).toEqual(<any> { label: '', placeholder: 'Title', focus: false, disabled: false });
+    });
+  });
+
+
+  describe('assign model to fields', () => {
+    let fields: FormlyFieldConfig[],
+      model: any;
+
+    it('with simple field', () => {
+      model = { city: 'foo' };
+      fields = [{ key: 'city' }];
+
+      builder.buildForm(form, fields, model, {});
+
+      expect(fields[0].model).toEqual(model);
+    });
+
+    describe('with fieldGroup', () => {
+      it('fieldGroup without key', () => {
+        model = { city: 'foo' };
+        fields = [{
+          fieldGroup: [{
+            key: 'city',
+          }],
+        }];
+
+        builder.buildForm(form, fields, model, {});
+
+        expect(fields[0].model).toEqual(model);
+        expect(fields[0].fieldGroup[0].model).toEqual(model);
+      });
+
+      it('fieldGroup with key', () => {
+        model = { address: { city: 'foo' } };
+        fields = [{
+          key: 'address',
+          fieldGroup: [{
+            key: 'city',
+          }],
+        }];
+
+        builder.buildForm(form, fields, model, {});
+
+        expect(fields[0].model).toEqual(model.address);
+        expect(fields[0].fieldGroup[0].model).toEqual(model.address);
+      });
+
+      it('fieldGroup with nested key', () => {
+        model = { location: { address: { city: 'foo' } } };
+        fields = [{
+          key: 'location.address',
+          fieldGroup: [{
+            key: 'city',
+          }],
+        }];
+
+        builder.buildForm(form, fields, model, {});
+
+        expect(fields[0].model).toEqual(model.location.address);
+        expect(fields[0].fieldGroup[0].model).toEqual(model.location.address);
+      });
+
+      it('assign parent field to children', () => {
+        model = { address: { city: 'foo' } };
+        fields = [{
+          key: 'address',
+          fieldGroup: [{
+            key: 'city',
+          }],
+        }];
+
+        builder.buildForm(form, fields, model, {});
+
+        expect(fields[0].model).toEqual(model.address);
+        expect(fields[0].fieldGroup[0].model).toEqual(model.address);
+        expect(fields[0].fieldGroup[0].parent).toEqual(fields[0]);
+      });
     });
   });
 
@@ -228,6 +346,29 @@ describe('FormlyFormBuilder service', () => {
       builder.buildForm(form, [field], model, {});
 
       expect(model['address']).toEqual({ city: 'foo' });
+    });
+
+    it('should set the defaultValue when fieldGroup is set', () => {
+      let model = {};
+      field = {
+        key: 'address',
+        defaultValue: { foo: 'foo' },
+        fieldGroup: [],
+      };
+      builder.buildForm(form, [field], model, {});
+
+      expect(model['address']).toEqual({ foo: 'foo' });
+    });
+
+    it('set empty object as defaultValue when fieldGroup is set', () => {
+      let model = {};
+      field = {
+        key: 'address',
+        fieldGroup: [],
+      };
+      builder.buildForm(form, [field], model, {});
+
+      expect(model['address']).toEqual({});
     });
 
     it('set empty array as defaultValue when fieldArray is set', () => {
@@ -334,7 +475,7 @@ describe('FormlyFormBuilder service', () => {
 
   describe('form control creation and addition', () => {
     it('should let component create the form control', () =>  {
-      let field = { key: 'title', type: 'input', component: new TestComponentThatCreatesControl() };
+      let field = { key: 'title', type: 'input-createcontrol' };
 
       builder.buildForm(form, [field], {}, {});
 
@@ -408,7 +549,7 @@ describe('FormlyFormBuilder service', () => {
   describe('initialise field validators', () => {
     const expectValidators = (invalidValue, validValue, errors?) => {
       const formControl = form.get('title');
-      expect(typeof field.validators.validation).toBe('function');
+      expect(Array.isArray(field._validators)).toBeTruthy();
 
       formControl.patchValue(invalidValue);
       expect(formControl.valid).toBeFalsy();
@@ -422,7 +563,7 @@ describe('FormlyFormBuilder service', () => {
 
     const expectAsyncValidators = (value) => {
       const formControl = form.get('title');
-      expect(typeof field.asyncValidators.validation).toBe('function');
+      expect(Array.isArray(field._asyncValidators)).toBeTruthy();
 
       formControl.patchValue(value);
       expect(formControl.status).toBe('PENDING');
@@ -545,9 +686,7 @@ describe('FormlyFormBuilder service', () => {
 });
 
 export class TestComponentThatCreatesControl {
-
-  createControl(model, field) {
+  static createControl(model, field) {
     return new FormControl('created by component');
   }
-
 }

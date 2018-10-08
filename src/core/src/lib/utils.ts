@@ -1,5 +1,6 @@
 import { FormlyFieldConfig } from './core';
 import { Observable } from 'rxjs';
+import { AbstractControl, FormArray, FormGroup } from '@angular/forms';
 
 export function getFieldId(formId: string, field: FormlyFieldConfig, index: string|number) {
   if (field.id) return field.id;
@@ -26,7 +27,7 @@ export function getKeyPath(field: {key?: string|string[], fieldGroup?: any, fiel
       }
       for (let i = 0; i < keyPath.length; i++) {
         let pathElement = keyPath[i];
-        if (typeof pathElement === 'string' && stringIsInteger(pathElement))  {
+        if (typeof pathElement === 'string' && /^\d+$/.test(pathElement))  {
           keyPath[i] = parseInt(pathElement);
         }
       }
@@ -40,69 +41,7 @@ export function getKeyPath(field: {key?: string|string[], fieldGroup?: any, fiel
   return (<any> field)['_formlyKeyPath'].path.slice(0);
 }
 
-function stringIsInteger(str: string) {
-  return !isNullOrUndefined(str) && /^\d+$/.test(str);
-}
-
 export const FORMLY_VALIDATORS = ['required', 'pattern', 'minLength', 'maxLength', 'min', 'max'];
-
-export function getFieldModel(model: any, field: FormlyFieldConfig, constructEmptyObjects: boolean): any {
-  let keyPath: (string|number)[] = getKeyPath(field);
-  let value: any = model;
-  for (let i = 0; i < keyPath.length; i++) {
-    let path = keyPath[i];
-    let pathValue = value[path];
-    if (isNullOrUndefined(pathValue) && constructEmptyObjects) {
-      if (i < keyPath.length - 1) {
-        /* TODO? : It would be much nicer if we could construct object instances of the correct class, for instance by using factories. */
-        value[path] = typeof keyPath[i + 1] === 'number' ? [] : {};
-      } else if (field.fieldGroup && !field.fieldArray) {
-        value[path] = {};
-      } else if (field.fieldArray) {
-        value[path] = [];
-      }
-    }
-    value = value[path];
-    if (!value) {
-      break;
-    }
-  }
-  return value;
-}
-
-export function assignModelToFields(fields: FormlyFieldConfig[], model: any, parent?: FormlyFieldConfig) {
-  fields.forEach((field) => {
-    if (!isUndefined(field.defaultValue) && isUndefined(getValueForKey(model, field.key))) {
-      assignModelValue(model, field.key, field.defaultValue);
-    }
-
-    Object.defineProperty(field, 'parent', { get: () => parent, configurable: true });
-    if (field.key && field.fieldArray) {
-      field.fieldGroup = field.fieldGroup || [];
-      field.fieldGroup.length = 0;
-
-      const m = getFieldModel(model, field, true);
-      m.forEach((m: any, i: number) => field.fieldGroup.push({ ...clone(field.fieldArray), key: `${i}` }));
-      if (field.hasOwnProperty('model') && field.model !== m) {
-        field.model.length = 0;
-        m.forEach((m: any, i: number) => field.model[i] = m);
-      }
-    }
-
-    if (!field.hasOwnProperty('model') || !field.key || !(field.fieldArray || field.fieldGroup)) {
-      Object.defineProperty(field, 'model', {
-        get: () => field.key && (field.fieldGroup || field.fieldArray)
-          ? getFieldModel(model, field, true)
-          : model,
-        configurable: true,
-      });
-
-      if (field.fieldGroup) {
-        assignModelToFields(field.fieldGroup, field.model, field);
-      }
-    }
-  });
-}
 
 export function assignModelValue(model: any, path: string | (string | number)[], value: any) {
   if (typeof path === 'string') {
@@ -120,19 +59,15 @@ export function assignModelValue(model: any, path: string | (string | number)[],
   }
 }
 
-export function getValueForKey(model: any, path: string | (string | number)[]): any {
-  if (typeof path === 'string') {
-    path = getKeyPath({key: path});
+export function getFieldValue(field: FormlyFieldConfig): any {
+  const paths = getKeyPath(field);
+  let model = field.parent.model;
+  while (model && paths.length > 0) {
+    const e = paths.shift();
+    model = model[e];
   }
-  if (path.length > 1) {
-    const e = path.shift();
-    if (!model[e]) {
-      model[e] = typeof path[0] === 'string' ? {} : [];
-    }
-    return getValueForKey(model[e], path);
-  } else {
-    return model[path[0]];
-  }
+
+  return model;
 }
 
 export function getKey(controlKey: string, actualKey: string) {
@@ -187,6 +122,10 @@ export function clone(value: any): any {
     return value;
   }
 
+  if (value instanceof AbstractControl) {
+    return null;
+  }
+
   if (Object.prototype.toString.call(value) === '[object Date]') {
     return new Date(value.getTime());
   }
@@ -201,26 +140,15 @@ export function clone(value: any): any {
   return value;
 }
 
-export function evalStringExpression(expression: string, argNames: string[]) {
-  try {
-    return Function(...argNames, `return ${expression};`) as any;
-  } catch (error) {
-    console.error(error);
+export function removeFieldControl(form: FormArray | FormGroup, key: string | number) {
+  if (form instanceof FormArray) {
+    form.removeAt(key as number);
+  } else if (form instanceof FormGroup) {
+    form.removeControl(`${key}`);
   }
 }
 
-export function evalExpressionValueSetter(expression: string, argNames: string[]) {
-  try {
-    return Function(...argNames, `${expression} = expressionValue;`) as (value: any) => void;
-  } catch (error) {
-    console.error(error);
-  }
-}
-
-export function evalExpression(expression: string | Function | boolean, thisArg: any, argVal: any[]): any {
-  if (expression instanceof Function) {
-    return expression.apply(thisArg, argVal);
-  } else {
-    return expression ? true : false;
-  }
+export function defineHiddenProp(field, prop, defaultValue) {
+  Object.defineProperty(field, prop, { enumerable: false, writable: true, configurable: true });
+  field[prop] = defaultValue;
 }

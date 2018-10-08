@@ -1,113 +1,115 @@
 import {
   Component, OnInit, OnChanges, EventEmitter, Input, Output, OnDestroy,
-  ViewContainerRef, ViewChild, ComponentRef, ComponentFactoryResolver, SimpleChanges, DoCheck, AfterContentInit, AfterContentChecked, AfterViewInit, AfterViewChecked,
+  ViewContainerRef, ViewChild, ComponentRef, SimpleChanges, DoCheck, AfterContentInit, AfterContentChecked, AfterViewInit, AfterViewChecked,
 } from '@angular/core';
 import { FormGroup } from '@angular/forms';
 import { FormlyConfig } from '../services/formly.config';
-import { Field } from '../templates/field';
-import { FormlyFieldConfig, FormlyFormOptions, FormlyLifeCycleFn } from './formly.field.config';
+import { FormlyFieldConfig, FormlyFormOptions } from './formly.field.config';
+import { FieldWrapper } from '../templates/field.wrapper';
 
 @Component({
   selector: 'formly-field',
-  template: `
-    <ng-template #fieldComponent></ng-template>
-    <div *ngIf="field.template && !field.fieldGroup" [innerHtml]="field.template"></div>
-  `,
+  template: `<ng-template #container></ng-template>`,
   host: {
     '[style.display]': 'field.hide ? "none":""',
+    '[class]': 'field.className? field.className : className',
   },
 })
 export class FormlyField implements OnInit, OnChanges, DoCheck, AfterContentInit, AfterContentChecked, AfterViewInit, AfterViewChecked, OnDestroy {
-  @Input() model: any;
-  @Input() form: FormGroup;
   @Input() field: FormlyFieldConfig;
-  @Input() options: FormlyFormOptions = {};
+  @Input('class') className: string = '';
+
+  @Input() set model(m: any) {
+    console.warn(`NgxFormly: passing 'model' input to '${this.constructor.name}' component is not required anymore, you may remove it!`);
+  }
+
+  @Input() set form(form: FormGroup) {
+    console.warn(`NgxFormly: passing 'form' input to '${this.constructor.name}' component is not required anymore, you may remove it!`);
+  }
+
+  @Input() set options(options: FormlyFormOptions) {
+    console.warn(`NgxFormly: passing 'options' input to '${this.constructor.name}' component is not required anymore, you may remove it!`);
+  }
+
   @Output() modelChange: EventEmitter<any> = new EventEmitter();
-  @ViewChild('fieldComponent', {read: ViewContainerRef}) fieldComponent: ViewContainerRef;
+  @ViewChild('container', {read: ViewContainerRef}) containerRef: ViewContainerRef;
 
-  private componentRefs: ComponentRef<Field>[] = [];
+  private componentRefs: ComponentRef<FieldWrapper>[] = [];
 
-  constructor(
-    private formlyConfig: FormlyConfig,
-    private componentFactoryResolver: ComponentFactoryResolver,
-  ) {}
+  constructor(private formlyConfig: FormlyConfig) {}
 
   ngAfterContentInit() {
-    this.lifeCycleHooks(this.field.lifecycle.afterContentInit);
+    this.triggerHook('afterContentInit');
   }
 
   ngAfterContentChecked() {
-    this.lifeCycleHooks(this.field.lifecycle.afterContentChecked);
+    this.triggerHook('afterContentChecked');
   }
 
   ngAfterViewInit() {
-    this.lifeCycleHooks(this.field.lifecycle.afterViewInit);
+    this.triggerHook('afterViewInit');
   }
 
   ngAfterViewChecked() {
-    this.lifeCycleHooks(this.field.lifecycle.afterViewChecked);
+    this.triggerHook('afterViewChecked');
   }
 
   ngDoCheck() {
-    this.lifeCycleHooks(this.field.lifecycle.doCheck);
+    this.triggerHook('doCheck');
   }
 
   ngOnInit() {
-    if (!this.field.template) {
-      this.createFieldComponent();
-    }
-    this.lifeCycleHooks(this.field.lifecycle.onInit);
+    this.triggerHook('onInit');
   }
 
   ngOnChanges(changes: SimpleChanges) {
-    this.lifeCycleHooks(this.field.lifecycle.onChanges);
+    if (changes.field) {
+      this.renderField(this.field, this.containerRef);
+    }
+
+    this.triggerHook('onChanges');
     this.componentRefs.forEach(ref => {
-      Object.assign(ref.instance, {
-        model: this.model,
-        form: this.form,
-        field: this.field,
-        options: this.options,
-      });
+      Object.assign(ref.instance, { field: this.field });
     });
   }
 
   ngOnDestroy() {
-    this.lifeCycleHooks(this.field.lifecycle.onDestroy);
+    this.triggerHook('onDestroy');
     this.componentRefs.forEach(componentRef => componentRef.destroy());
     this.componentRefs = [];
   }
 
-  private createFieldComponent(): ComponentRef<Field> {
-    const type = this.formlyConfig.getType(this.field.type);
+  private renderField(field: FormlyFieldConfig, containerRef: ViewContainerRef) {
+    this.componentRefs.forEach(componentRef => componentRef.destroy());
+    this.componentRefs = [];
 
-    let fieldComponent = this.fieldComponent;
-    (this.field.wrappers || []).forEach(wrapperName => {
-      const wrapperRef = this.createComponent(fieldComponent, this.formlyConfig.getWrapper(wrapperName).component);
-      fieldComponent = wrapperRef.instance.fieldComponent;
+    const wrappers = <any>(field.wrappers || []).map(wrapperName => this.formlyConfig.getWrapper(wrapperName));
+    [...wrappers, { ...this.formlyConfig.getType(field.type), componentFactory: (<any> field)._componentFactory }].forEach(({ componentFactoryResolver, component, componentRef }) => {
+      const ref = componentRef ? componentRef : containerRef.createComponent<FieldWrapper>(componentFactoryResolver.resolveComponentFactory(component));
+
+      Object.assign(ref.instance, { field });
+      this.componentRefs.push(ref);
+      containerRef = ref.instance.fieldComponent;
     });
-
-    return this.createComponent(fieldComponent, type.component);
   }
 
-  private createComponent(fieldComponent: ViewContainerRef, component: any): ComponentRef<any> {
-    let componentFactory = this.componentFactoryResolver.resolveComponentFactory(component);
-    let ref = <ComponentRef<Field>>fieldComponent.createComponent(componentFactory);
+  private triggerHook(name: string) {
+    if (this.field.hooks && this.field.hooks[name]) {
+      this.field.hooks[name](this.field);
+    }
 
-    Object.assign(ref.instance, {
-        model: this.model,
-        form: this.form,
-        field: this.field,
-        options: this.options,
-    });
+    if (this.field.lifecycle && this.field.lifecycle[name]) {
+      let field = this.field;
+      while (field.parent) {
+        field = field.parent;
+      }
 
-    this.componentRefs.push(ref);
-
-    return ref;
-  }
-
-  private lifeCycleHooks(callback: FormlyLifeCycleFn) {
-    if (callback) {
-      callback(this.form, this.field, this.model, this.options);
+      this.field.lifecycle[name](
+        <FormGroup>(field !== this.field ? field.formControl : null),
+        this.field,
+        this.field.model,
+        this.field.options,
+      );
     }
   }
 }

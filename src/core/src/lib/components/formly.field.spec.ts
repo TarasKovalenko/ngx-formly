@@ -56,9 +56,9 @@ describe('FormlyField Component', () => {
     });
   });
 
-  it('should render template option', () => {
+  xit('should render template option', () => {
     testComponentInputs = {
-      field: { template: '<div>Nested property keys</div>', lifecycle: {} },
+      field: { template: '<div>Nested property keys</div>', hooks: {} },
     };
 
     const fixture = createTestComponent('<formly-field [field]="field"></formly-field>');
@@ -66,13 +66,16 @@ describe('FormlyField Component', () => {
     expect(fixture.nativeElement.innerText).toEqual('Nested property keys');
   });
 
-  it('should call field lifecycle hooks if set', () => {
+  it('should call field hooks if set', () => {
     testComponentInputs = {
       field: {
         key: 'title',
         type: 'text',
         formControl: new FormControl(),
-        lifecycle: {
+        parent: {
+          formControl: new FormGroup({}),
+        },
+        hooks: {
           afterContentInit: () => {},
           afterContentChecked: () => {},
           afterViewInit: () => {},
@@ -85,27 +88,27 @@ describe('FormlyField Component', () => {
       },
     };
 
-    const lifecycle = testComponentInputs.field.lifecycle;
-    spyOn(lifecycle, 'afterContentInit');
-    spyOn(lifecycle, 'afterContentChecked');
-    spyOn(lifecycle, 'afterViewInit');
-    spyOn(lifecycle, 'afterViewChecked');
-    spyOn(lifecycle, 'doCheck');
-    spyOn(lifecycle, 'onInit');
-    spyOn(lifecycle, 'onChanges');
-    spyOn(lifecycle, 'onDestroy');
+    const hooks = testComponentInputs.field.hooks;
+    spyOn(hooks, 'afterContentInit');
+    spyOn(hooks, 'afterContentChecked');
+    spyOn(hooks, 'afterViewInit');
+    spyOn(hooks, 'afterViewChecked');
+    spyOn(hooks, 'doCheck');
+    spyOn(hooks, 'onInit');
+    spyOn(hooks, 'onChanges');
+    spyOn(hooks, 'onDestroy');
 
     const fixture = createTestComponent('<formly-field [field]="field"></formly-field>');
     fixture.destroy();
 
-    expect(lifecycle.afterContentInit).toHaveBeenCalled();
-    expect(lifecycle.afterContentChecked).toHaveBeenCalled();
-    expect(lifecycle.afterViewInit).toHaveBeenCalled();
-    expect(lifecycle.afterViewChecked).toHaveBeenCalled();
-    expect(lifecycle.doCheck).toHaveBeenCalled();
-    expect(lifecycle.onInit).toHaveBeenCalled();
-    expect(lifecycle.onChanges).toHaveBeenCalled();
-    expect(lifecycle.onDestroy).toHaveBeenCalled();
+    expect(hooks.afterContentInit).toHaveBeenCalledWith(testComponentInputs.field);
+    expect(hooks.afterContentChecked).toHaveBeenCalledWith(testComponentInputs.field);
+    expect(hooks.afterViewInit).toHaveBeenCalledWith(testComponentInputs.field);
+    expect(hooks.afterViewChecked).toHaveBeenCalledWith(testComponentInputs.field);
+    expect(hooks.doCheck).toHaveBeenCalledWith(testComponentInputs.field);
+    expect(hooks.onInit).toHaveBeenCalledWith(testComponentInputs.field);
+    expect(hooks.onChanges).toHaveBeenCalledWith(testComponentInputs.field);
+    expect(hooks.onDestroy).toHaveBeenCalledWith(testComponentInputs.field);
   });
 
   it('should render field type', () => {
@@ -122,7 +125,7 @@ describe('FormlyField Component', () => {
       form: new FormGroup({}),
     };
 
-    const fixture = createTestComponent('<formly-field [form]="form" [field]="field"></formly-field>');
+    const fixture = createTestComponent('<formly-field [field]="field"></formly-field>');
 
     expect(getLabelWrapper(fixture.nativeElement)).toEqual(null);
     expect(getFormlyFieldElement(fixture.nativeElement).getAttribute('style')).toEqual(null);
@@ -154,7 +157,7 @@ describe('FormlyField Component', () => {
       form: new FormGroup({}),
     };
 
-    const fixture = createTestComponent('<formly-field [form]="form" [field]="field"></formly-field>');
+    const fixture = createTestComponent('<formly-field [field]="field"></formly-field>');
 
     expect(getInputField(fixture.nativeElement, 0).getAttribute('placeholder')).toEqual('Title1');
     expect(getInputField(fixture.nativeElement, 1).getAttribute('placeholder')).toEqual('Title2');
@@ -180,7 +183,7 @@ describe('FormlyField Component', () => {
     it('should render field without wrapper or key', () => {
       delete testComponentInputs.field.key;
 
-      const fixture = createTestComponent('<formly-field [form]="form" [field]="field"></formly-field>');
+      const fixture = createTestComponent('<formly-field [field]="field"></formly-field>');
       const elm = getFormlyFieldElement(fixture.nativeElement);
       expect(getInputField(elm)).toBeDefined();
     });
@@ -188,7 +191,7 @@ describe('FormlyField Component', () => {
     it('should render field wrapper', () => {
       testComponentInputs.field.wrappers = ['label'];
 
-      const fixture = createTestComponent('<formly-field [form]="form" [field]="field"></formly-field>');
+      const fixture = createTestComponent('<formly-field [field]="field"></formly-field>');
       const elm = getFormlyFieldElement(fixture.nativeElement);
 
       expect(getLabelWrapper(elm).innerText).toEqual('Title');
@@ -211,7 +214,7 @@ describe('FormlyField Component', () => {
       form: new FormGroup({}),
     };
 
-    const fixture = createTestComponent('<formly-field [form]="form" [field]="field"></formly-field>');
+    const fixture = createTestComponent('<formly-field [field]="field"></formly-field>');
     expect(getLabelWrapper(fixture.nativeElement)).toEqual(null);
     expect(getFormlyFieldElement(fixture.nativeElement).getAttribute('style')).toEqual(null);
     expect(getInputField(fixture.nativeElement).getAttribute('placeholder')).toEqual('Title');

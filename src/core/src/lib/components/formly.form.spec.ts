@@ -517,30 +517,6 @@ describe('FormlyForm Component', () => {
       expect(form.get('title').enabled).toEqual(false);
     });
 
-    it('should enable parent formControl when child is enabled', () => {
-      delete field.type;
-      field.key = 'address';
-      field.expressionProperties = {
-        'templateOptions.disabled': (model) => true,
-      };
-      field.fieldGroup = [
-        {
-          key: 'city',
-          type: 'text',
-          templateOptions: {
-            placeholder: 'Title',
-          },
-          expressionProperties: {
-            'templateOptions.disabled': (model) => false,
-          },
-        },
-      ];
-
-      createTestComponent('<formly-form [form]="form" [fields]="fields" [model]="model"></formly-form>');
-      expect(field.templateOptions.disabled).toEqual(false);
-      expect(field.fieldGroup[0].templateOptions.disabled).toEqual(false);
-    });
-
     const options = [
       { name: 'required', value: true, invalid: null },
       { name: 'pattern', value: '[0-9]{5}', invalid: 'ddd' },
@@ -644,7 +620,7 @@ describe('FormlyForm Component', () => {
       expect(testComponentInputs.form.value).toEqual({ test: '***' });
     });
 
-    it('fallback to null for an non-existing member', () => {
+    it('fallback to undefined for an non-existing member', () => {
       testComponentInputs = {
         model: { aa: { test: 'aaa' } },
         form: new FormGroup({}),
@@ -659,7 +635,7 @@ describe('FormlyForm Component', () => {
 
       fixture.componentInstance.model = {};
       fixture.detectChanges();
-      expect(testComponentInputs.form.value).toEqual({ aa: { test: null } });
+      expect(testComponentInputs.form.value).toEqual({ aa: { test: undefined } });
     });
 
     it('should not emit `modelChange`', () => {
@@ -1004,12 +980,7 @@ class TestComponent {
   selector: 'formly-repeat-section',
   template: `
     <div *ngFor="let field of field.fieldGroup; let i = index;">
-      <formly-group
-        [model]="model[i]"
-        [field]="field"
-        [options]="options"
-        [form]="formControl">
-      </formly-group>
+      <formly-group [field]="field"></formly-group>
       <button [id]="'remove-' + i" type="button" (click)="remove(i)">Remove</button>
     </div>
     <button id="add" type="button" (click)="add()">Add</button>
