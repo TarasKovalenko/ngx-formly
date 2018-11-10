@@ -1,4 +1,4 @@
-import { Component, DoCheck, OnChanges, Input, SimpleChanges, Optional, EventEmitter, Output, SkipSelf, OnDestroy } from '@angular/core';
+import { Component, DoCheck, OnChanges, Input, SimpleChanges, Optional, EventEmitter, Output, SkipSelf, OnDestroy, ComponentFactoryResolver } from '@angular/core';
 import { FormGroup, FormArray, NgForm, FormGroupDirective } from '@angular/forms';
 import { FormlyFieldConfig, FormlyFormOptions, FormlyValueChangeEvent, FormlyFormOptionsCache } from './formly.field.config';
 import { FormlyFormBuilder } from '../services/formly.form.builder';
@@ -46,6 +46,7 @@ export class FormlyForm implements DoCheck, OnChanges, OnDestroy {
   constructor(
     private formlyBuilder: FormlyFormBuilder,
     private formlyConfig: FormlyConfig,
+    private componentFactoryResolver: ComponentFactoryResolver,
     @Optional() private parentForm: NgForm,
     @Optional() private parentFormGroup: FormGroupDirective,
     @Optional() @SkipSelf() private parentFormlyForm: FormlyForm,
@@ -100,9 +101,7 @@ export class FormlyForm implements DoCheck, OnChanges, OnDestroy {
           Object.assign(this.model, model || {});
         }
 
-        this.clearModelSubscriptions();
-        this.formlyBuilder.buildForm(this.form, this.fields, this.model, this.options);
-        this.trackModelChanges(this.fields);
+        (<FormlyFormOptionsCache> this.options)._buildForm();
 
         // we should call `NgForm::resetForm` to ensure changing `submitted` state after resetting form
         // but only when the current component is a root one.
@@ -118,6 +117,22 @@ export class FormlyForm implements DoCheck, OnChanges, OnDestroy {
       this.options.parentForm = this.parentFormGroup || this.parentForm;
     }
 
+    if (this.options.parentForm) {
+      let submitted = this.options.parentForm.submitted;
+      Object.defineProperty(this.options.parentForm, 'submitted', {
+        get: () => submitted,
+        set: value => {
+          submitted = value;
+          (<FormlyFormOptionsCache> this.options)._markForCheck({
+            fieldGroup: this.fields,
+            model: this.model,
+            formControl: this.form,
+            options: this.options,
+          });
+        },
+      });
+    }
+
     if (!this.options.updateInitialValue) {
       this.options.updateInitialValue = () => this.initialModel = reverseDeepMerge({}, this.model);
     }
@@ -129,11 +144,32 @@ export class FormlyForm implements DoCheck, OnChanges, OnDestroy {
         this.trackModelChanges(this.fields);
       };
     }
+
+    if (!(<FormlyFormOptionsCache> this.options)._markForCheck) {
+      (<FormlyFormOptionsCache> this.options)._markForCheck = (field) => {
+        if (field._componentRefs) {
+          field._componentRefs.forEach(ref => ref.changeDetectorRef.markForCheck());
+        }
+
+        if (field.fieldGroup) {
+          field.fieldGroup.forEach(f => (<FormlyFormOptionsCache> this.options)._markForCheck(f));
+        }
+      };
+    }
+
+    if (!(<FormlyFormOptionsCache> this.options)._componentFactoryResolver) {
+      (<FormlyFormOptionsCache> this.options)._componentFactoryResolver = this.componentFactoryResolver;
+    }
   }
 
   private checkExpressionChange() {
     if (this.isRoot && (<FormlyFormOptionsCache> this.options)._checkField) {
-      (<FormlyFormOptionsCache> this.options)._checkField({ fieldGroup: this.fields, model: this.model, formControl: this.form, options: this.options });
+      (<FormlyFormOptionsCache> this.options)._checkField({
+        fieldGroup: this.fields,
+        model: this.model,
+        formControl: this.form,
+        options: this.options,
+      });
     }
   }
 

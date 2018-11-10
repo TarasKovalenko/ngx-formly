@@ -1,11 +1,13 @@
 import {
-  Component, OnInit, OnChanges, EventEmitter, Input, Output, OnDestroy,
-  ViewContainerRef, ViewChild, ComponentRef, SimpleChanges, DoCheck, AfterContentInit, AfterContentChecked, AfterViewInit, AfterViewChecked, Attribute,
+  Component, EventEmitter, Input, Output,
+  ViewContainerRef, ViewChild, ComponentRef, SimpleChanges, Attribute, ComponentFactoryResolver,
+  OnInit, OnChanges, OnDestroy, DoCheck, AfterContentInit, AfterContentChecked, AfterViewInit, AfterViewChecked,
 } from '@angular/core';
 import { FormGroup } from '@angular/forms';
 import { FormlyConfig } from '../services/formly.config';
-import { FormlyFieldConfig, FormlyFormOptions } from './formly.field.config';
+import { FormlyFieldConfig, FormlyFormOptions, FormlyFieldConfigCache } from './formly.field.config';
 import { FieldWrapper } from '../templates/field.wrapper';
+import { defineHiddenProp } from '../utils';
 
 @Component({
   selector: 'formly-field',
@@ -36,10 +38,21 @@ export class FormlyField implements OnInit, OnChanges, DoCheck, AfterContentInit
   @Output() modelChange: EventEmitter<any> = new EventEmitter();
   @ViewChild('container', {read: ViewContainerRef}) containerRef: ViewContainerRef;
 
-  private componentRefs: ComponentRef<FieldWrapper>[] = [];
+  get componentRefs(): ComponentRef<any>[] {
+    if (!(<FormlyFieldConfigCache> this.field)._componentRefs) {
+      defineHiddenProp(this.field, '_componentRefs', []);
+    }
+
+    return (<FormlyFieldConfigCache> this.field)._componentRefs;
+  }
+
+  set componentRefs(refs: ComponentRef<any>[]) {
+    (<FormlyFieldConfigCache> this.field)._componentRefs = refs;
+  }
 
   constructor(
     private formlyConfig: FormlyConfig,
+    private componentFactoryResolver: ComponentFactoryResolver,
     // tslint:disable-next-line
     @Attribute('hide-deprecation') hideDeprecation,
   ) {
@@ -92,8 +105,8 @@ export class FormlyField implements OnInit, OnChanges, DoCheck, AfterContentInit
     this.componentRefs = [];
 
     const wrappers = <any>(field.wrappers || []).map(wrapperName => this.formlyConfig.getWrapper(wrapperName));
-    [...wrappers, { ...this.formlyConfig.getType(field.type), componentFactory: (<any> field)._componentFactory }].forEach(({ componentFactoryResolver, component, componentRef }) => {
-      const ref = componentRef ? componentRef : containerRef.createComponent<FieldWrapper>(componentFactoryResolver.resolveComponentFactory(component));
+    [...wrappers, { ...this.formlyConfig.getType(field.type), componentFactory: (<any> field)._componentFactory }].forEach(({ component, componentRef }) => {
+      const ref = componentRef ? componentRef : containerRef.createComponent<FieldWrapper>(this.componentFactoryResolver.resolveComponentFactory(component));
 
       Object.assign(ref.instance, { field });
       this.componentRefs.push(ref);
